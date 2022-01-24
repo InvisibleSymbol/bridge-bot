@@ -1,0 +1,17 @@
+version: "2.4"
+services:
+  bridge-bot:
+    build: bridge-bot
+    volumes:
+      - ./bridge-bot:/app
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+
+  mongodb:
+    image: mongo:latest
+    volumes:
+      - ./mongodb:/data/db
+    ports:
+      - "27017:27017"
+    restart: unless-stopped

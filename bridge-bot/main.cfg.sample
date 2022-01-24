@@ -1,0 +1,8 @@
+log_level: `logging:DEBUG`,
+mongodb_uri = "mongodb://localhost:27017"
+discord: {
+  secret: "insert discord secret here",
+  channels: {
+    errors: 895367217288466482
+  }
+}
