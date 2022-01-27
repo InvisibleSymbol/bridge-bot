@@ -1,10 +1,10 @@
 import asyncio
 import logging
 
-import discord
 import motor.motor_asyncio
-from discord import is_owner, SlashCommandGroup, AutocompleteContext, Embed, AllowedMentions, File
+from discord import SlashCommandGroup, AutocompleteContext, Embed, AllowedMentions, slash_command
 from discord.commands import Option
+from discord.commands import permissions
 from discord.ext import commands
 
 from utils.cfg import cfg
@@ -112,7 +112,7 @@ class Bridge(commands.Cog):
             # get the bridged message from db
             db_message = await self.db.messages.find_one(
                 {
-                    "message_id": message.reference.message_id,
+                    "message_id"    : message.reference.message_id,
                     "target_channel": target_channel
                 })
             if db_message:
@@ -130,9 +130,9 @@ class Bridge(commands.Cog):
         )
         # add to message collection
         await self.db.messages.insert_one({
-            "message_id": message.id,
+            "message_id"        : message.id,
             "bridged_message_id": bridged_message.id,
-            "target_channel": target_channel
+            "target_channel"    : target_channel
         })
 
     async def handle_edited_message(self, target_channel, message, bridge_name):
@@ -141,7 +141,7 @@ class Bridge(commands.Cog):
             log.warning(f"Bridge {bridge_name} target channel {target_channel} not found!")
             return
         # get bridged message from collection
-        bridged_message = await self.db.messages.find_one({"message_id": message.id,
+        bridged_message = await self.db.messages.find_one({"message_id"    : message.id,
                                                            "target_channel": target_channel})
         if bridged_message is None:
             log.warning(f"Bridge {bridge_name} message {message.id} not found!")
@@ -157,7 +157,7 @@ class Bridge(commands.Cog):
             log.warning(f"Bridge {bridge_name} target channel {target_channel} not found!")
             return
         # get bridged message from collection
-        bridged_message = await self.db.messages.find_one({"message_id": message.id,
+        bridged_message = await self.db.messages.find_one({"message_id"    : message.id,
                                                            "target_channel": target_channel})
         if bridged_message is None:
             log.warning(f"Bridge {bridge_name} message {message.id} not found!")
@@ -166,7 +166,7 @@ class Bridge(commands.Cog):
         bridged_message = await channel.fetch_message(bridged_message["bridged_message_id"])
         await bridged_message.delete()
         # delete from collection
-        await self.db.messages.delete_one({"message_id": message.id,
+        await self.db.messages.delete_one({"message_id"    : message.id,
                                            "target_channel": target_channel})
 
     @commands.Cog.listener()
@@ -213,8 +213,8 @@ class Bridge(commands.Cog):
     def match_bridge_names(self, name: AutocompleteContext):
         return [bridge for bridge in self.bridge_names if bridge.startswith(name.value)]
 
-    @bridge.command(default_permission=False)
-    @is_owner()
+    @slash_command(default_permission=False)
+    @permissions.is_owner()
     async def create(self,
                      ctx,
                      bridge_name: str):
@@ -222,7 +222,7 @@ class Bridge(commands.Cog):
         await ctx.defer(ephemeral=True)
         current_channel_id = ctx.channel.id
         # check if this channel is already bridged
-        bridge = await self.db.bridges.find_one({"channels.id": current_channel_id})
+        bridge = await self.db.bridges.find_one({"channels": current_channel_id})
         if bridge:
             await ctx.respond(f"This channel is already connected to Bridge {bridge['name']}!", ephemeral=True)
             return
@@ -241,8 +241,8 @@ class Bridge(commands.Cog):
                           f"Use `/bridge connect {bridge_name}` to connect other channels to this bridge.",
                           ephemeral=True)
 
-    @bridge.command(default_permission=False)
-    @is_owner()
+    @slash_command(default_permission=False)
+    @permissions.is_owner()
     async def delete(self,
                      ctx,
                      bridge_name: Option(
@@ -263,8 +263,8 @@ class Bridge(commands.Cog):
         await self.maintenance()
         await ctx.respond(f'Bridge {bridge_name} deleted!', ephemeral=True)
 
-    @bridge.command(default_permission=False)
-    @is_owner()
+    @slash_command(default_permission=False)
+    @permissions.is_owner()
     async def connect(self,
                       ctx,
                       bridge_name: Option(
@@ -280,7 +280,7 @@ class Bridge(commands.Cog):
             return
 
         # check if this channel is already bridged
-        bridge = await self.db.bridges.find_one({"channels.id": ctx.channel.id})
+        bridge = await self.db.bridges.find_one({"channels": ctx.channel.id})
         if bridge:
             await ctx.respond("This channel is already bridged!", ephemeral=True)
             return
@@ -292,13 +292,13 @@ class Bridge(commands.Cog):
         await ctx.respond('Channel connected to bridge!', ephemeral=True)
 
     async def match_connected_bridge_name(self, ctx: AutocompleteContext):
-        bridge = await self.db.bridges.find_one({'channels.id': ctx.interaction.channel.id})
+        bridge = await self.db.bridges.find_one({'channels': ctx.interaction.channel.id})
         if bridge:
             return [bridge['name']]
         return []
 
-    @bridge.command(default_permission=False)
-    @is_owner()
+    @slash_command(default_permission=False)
+    @permissions.is_owner()
     async def disconnect(self,
                          ctx,
                          bridge_name: Option(
@@ -314,7 +314,7 @@ class Bridge(commands.Cog):
             return
 
         # check if this channel is in the bridge
-        bridge = await self.db.bridges.find_one({"channels.id": ctx.channel.id})
+        bridge = await self.db.bridges.find_one({"channels": ctx.channel.id})
         if not bridge:
             await ctx.respond("This channel is not bridged!", ephemeral=True)
             return
