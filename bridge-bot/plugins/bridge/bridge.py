@@ -2,7 +2,7 @@ import asyncio
 import logging
 
 import motor.motor_asyncio
-from discord import SlashCommandGroup, AutocompleteContext, Embed, AllowedMentions, slash_command
+from discord import AutocompleteContext, Embed, AllowedMentions, slash_command
 from discord.commands import Option
 from discord.commands import permissions
 from discord.ext import commands
@@ -15,8 +15,6 @@ log.setLevel(cfg["log_level"])
 
 
 class Bridge(commands.Cog):
-    bridge = SlashCommandGroup("bridge", "Manage channel bridges!")
-
     def __init__(self, bot):
         self.bot = bot
         self.mongo = motor.motor_asyncio.AsyncIOMotorClient(cfg["mongodb_uri"])
