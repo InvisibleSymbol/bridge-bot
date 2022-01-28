@@ -236,7 +236,7 @@ class Bridge(commands.Cog):
         self.bridge_names.append(bridge_name)
         await self.maintenance()
         await ctx.respond(f"Bridge created!\n"
-                          f"Use `/bridge connect {bridge_name}` to connect other channels to this bridge.",
+                          f"Use `/connect {bridge_name}` to connect other channels to this bridge.",
                           ephemeral=True)
 
     @slash_command(default_permission=False)
