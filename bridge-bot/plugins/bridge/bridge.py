@@ -83,8 +83,12 @@ class Bridge(commands.Cog):
 
     def generate_message_bundle(self, message):
         e = message.embeds[0] if message.embeds else Embed(color=message.author.color)
+        if message.author.avatar:
+            pfp = message.author.avatar.url
+        else:
+            pfp = message.author.default_avatar.url
         e.set_author(name=f"{message.author} (#{message.channel.name} in {message.guild.name})",
-                     icon_url=message.author.avatar.url)
+                     icon_url=pfp)
         #
         e.description = message.content or "No Message Content"
         # try to display images largely
@@ -137,7 +141,7 @@ class Bridge(commands.Cog):
                         # check if there is a bridged message in the target channel with this id
                         db_message = await self.db.messages.find_one(
                             {
-                                "message_id": original_message_id,
+                                "message_id"    : original_message_id,
                                 "target_channel": target_channel
                             })
                         if db_message:
