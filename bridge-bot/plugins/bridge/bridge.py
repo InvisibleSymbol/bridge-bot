@@ -2,7 +2,7 @@ import asyncio
 import logging
 
 import motor.motor_asyncio
-from discord import AutocompleteContext, Embed, AllowedMentions, slash_command
+from discord import AutocompleteContext, Embed, AllowedMentions, slash_command, NotFound
 from discord.commands import Option
 from discord.commands import permissions
 from discord.ext import commands
@@ -107,16 +107,42 @@ class Bridge(commands.Cog):
         # handle replies
         reference = None
         if message.reference:
-            # get the bridged message from db
+            # check if the message is a reply to a non-bridged message
             db_message = await self.db.messages.find_one(
                 {
                     "message_id"    : message.reference.message_id,
                     "target_channel": target_channel
                 })
             if db_message:
+                # reply to bridged message
                 reference = await channel.fetch_message(db_message["bridged_message_id"])
-            else:
-                log.warning(f"Bridge {bridge_name} reply to {message.id} not found in db!")
+            if not db_message:
+                # let's check if this was a reply to a bridged message then
+                db_message = await self.db.messages.find_one(
+                    {
+                        "bridged_message_id": message.reference.message_id
+                    })
+                if db_message:
+                    # good, this is a reply to a bridged message, let's get the original message id
+                    original_message_id = db_message["message_id"]
+                    # check if the original message is in the target channel
+                    try:
+                        original_message = await channel.fetch_message(original_message_id)
+                    except NotFound:
+                        pass
+                    else:
+                        # good, the original message is in the target channel, let's reply to it
+                        reference = original_message
+                    if not reference:
+                        # check if there is a bridged message in the target channel with this id
+                        db_message = await self.db.messages.find_one(
+                            {
+                                "message_id": original_message_id,
+                                "target_channel": target_channel
+                            })
+                        if db_message:
+                            # good, there is a bridged message in the target channel with this id
+                            reference = await channel.fetch_message(db_message["bridged_message_id"])
         # handle embeds
         content, e = self.generate_message_bundle(message)
 
@@ -124,7 +150,7 @@ class Bridge(commands.Cog):
             content=content,
             reference=reference,
             embed=e,
-            allowed_mentions=AllowedMentions(everyone=False, users=False, roles=False)
+            allowed_mentions=AllowedMentions(everyone=False, users=False, roles=False, replied_user=bool(message.mentions))
         )
         # add to message collection
         await self.db.messages.insert_one({
