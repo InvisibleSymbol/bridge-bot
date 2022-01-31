@@ -277,7 +277,6 @@ class Bridge(commands.Cog):
 
         # create the bridge
         await self.db.bridges.insert_one({"name": bridge_name, "channels": [current_channel_id]})
-        self.bridge_names.append(bridge_name)
         await self.maintenance()
         await ctx.respond(f"Bridge created!\n"
                           f"Use `/connect {bridge_name}` to connect other channels to this bridge.",
@@ -301,7 +300,6 @@ class Bridge(commands.Cog):
 
         # delete the bridge
         await self.db.bridges.delete_one({"name": bridge_name})
-        self.bridge_names.remove(bridge_name)
         await self.maintenance()
         await ctx.respond(f'Bridge {bridge_name} deleted!', ephemeral=True)
 
