@@ -93,10 +93,9 @@ class Bridge(commands.Cog):
         e.description = message.content or "No Message Content"
         # try to display images largely
         if len(message.attachments) == 1 and message.attachments[0].content_type.startswith("image/"):
-            a = message.attachments.pop(0)
-            e.set_image(url=a.url)
-        # otherwise, add attachments as fields
-        if message.attachments:
+            e.set_image(url=message.attachments[0].url)
+        elif len(message.attachments) > 1:
+            # otherwise, add attachments as fields
             for i, attachment in enumerate(message.attachments):
                 e.add_field(name=f"Attachment #{i + 1}",
                             value=f"[{attachment.description or attachment.filename}]({attachment.url})")
