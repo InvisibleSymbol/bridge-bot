@@ -1,3 +1,3 @@
-git+git://github.com/Pycord-Development/pycord@8d176174d017f79c1de63089e48099170c504b12#egg=py-cord
+git+git://github.com/Pycord-Development/pycord@8d176174d017f79c1de63089e48099170c504b12#egg=py-cord[speed]
 config==0.5.1
 motor==2.5.1
