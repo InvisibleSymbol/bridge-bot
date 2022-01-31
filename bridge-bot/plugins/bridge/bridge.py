@@ -22,6 +22,7 @@ class Bridge(commands.Cog):
         self.bridge_names = []
         self.bridge_queues = {}
         self.bridge_tasks = {}
+        self.bridge_logs = {}
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -36,6 +37,7 @@ class Bridge(commands.Cog):
                 self.bridge_tasks[bridge].cancel()
                 del self.bridge_tasks[bridge]
                 del self.bridge_queues[bridge]
+                del self.bridge_logs[bridge]
                 self.bridge_names.remove(bridge)
                 log.info(f"Bridge {bridge} Task removed!")
         # create task for each bridge that is not in the bridge_tasks list
@@ -44,41 +46,53 @@ class Bridge(commands.Cog):
                 self.bridge_tasks[bridge] = self.bot.loop.create_task(self.bridge_loop(bridge))
                 self.bridge_names.append(bridge)
                 self.bridge_queues[bridge] = asyncio.Queue()
+                self.bridge_logs[bridge] = logging.getLogger(f"bridge-{bridge}")
+                self.bridge_logs[bridge].setLevel(cfg["log_level"])
                 log.info(f"Bridge {bridge} Task created!")
 
+    async def handle_event(self, func, payload, channel_id, bridge_name):
+        l = self.bridge_logs[bridge_name]
+        try:
+            await func(
+                target_channel=channel_id,
+                message=payload["message"],
+                bridge_name=bridge_name
+            )
+            l.debug(f"{func.__name__} on message {payload['message'].id} bridged to {channel_id}")
+        except Exception as e:
+            await report_error(e)
+            l.error(f"Error: {e}")
+
     async def bridge_loop(self, bridge_name):
-        log.info(f"Bridge {bridge_name} Task started!")
+        l = self.bridge_logs[bridge_name]
+        l.info(f"Task started!")
         while True:
             try:
-                log.debug(f"Bridge {bridge_name} waiting for messages...")
+                l.debug(f"Waiting for messages...")
                 payload = await self.bridge_queues[bridge_name].get()
-                log.debug(f"Bridge {bridge_name} got new payload!")
+                l.debug(f"Hot new payload!")
                 bridge = await self.db.bridges.find_one({"name": bridge_name})
-                for channel_id in bridge["channels"]:
-                    if channel_id == payload["message"].channel.id:
-                        continue
-                    match payload["type"]:
-                        case "new_message":
-                            func = self.handle_new_message
-                        case "edited_message":
-                            func = self.handle_edited_message
-                        case "deleted_message":
-                            func = self.handle_deleted_message
-                        case _:
-                            log.error(f"Bridge {bridge_name} unknown payload type!")
-                            continue
-                    try:
-                        await func(
-                            target_channel=channel_id,
-                            message=payload["message"],
-                            bridge_name=bridge_name
-                        )
-                    except Exception as e:
-                        await report_error(e)
-                        log.error(f"Bridge {bridge_name} error: {e}")
-                log.debug(f"Bridge {bridge_name} finished handling payload!")
+                match payload["type"]:
+                    case "new_message":
+                        func = self.handle_new_message
+                    case "edited_message":
+                        func = self.handle_edited_message
+                    case "deleted_message":
+                        func = self.handle_deleted_message
+                    case _:
+                        log.error(f"Bridge {bridge_name} unknown payload type!")
+                        return
+                # generate a async task for each channel
+                tasks = [
+                    self.bot.loop.create_task(
+                        self.handle_event(func, payload, channel_id, bridge_name)
+                    )
+                    for channel_id in bridge["channels"] if channel_id != payload["message"].channel.id
+                ]
+                await asyncio.gather(*tasks)
+                l.debug(f"Finished handling payload!")
             except asyncio.CancelledError:
-                log.info(f"Bridge {bridge_name} stopped!")
+                l.info(f"Stopped!")
                 break
 
     def generate_message_bundle(self, message):
@@ -208,7 +222,7 @@ class Bridge(commands.Cog):
         if not bridge:
             return
         await self.bridge_queues[bridge["name"]].put({"type": "new_message", "message": message})
-        log.debug(f"Bridge {bridge['name']} put new message in queue!")
+        log.debug(f"New message put in Queue for Bridge {bridge['name']}")
 
     @commands.Cog.listener()
     async def on_message_edit(self, before, after):
@@ -222,7 +236,7 @@ class Bridge(commands.Cog):
         if not bridge:
             return
         await self.bridge_queues[bridge["name"]].put({"type": "edited_message", "message": after})
-        log.debug(f"Bridge {bridge['name']} put edited message in queue!")
+        log.debug(f"Edited message put in Queue for Bridge {bridge['name']}")
 
     @commands.Cog.listener()
     async def on_message_delete(self, message):
@@ -236,6 +250,7 @@ class Bridge(commands.Cog):
         if not bridge:
             return
         await self.bridge_queues[bridge["name"]].put({"type": "deleted_message", "message": message})
+        log.debug(f"Deleted message put in Queue for Bridge {bridge['name']}")
 
     def match_bridge_names(self, name: AutocompleteContext):
         return [bridge for bridge in self.bridge_names if bridge.startswith(name.value)]
