@@ -98,7 +98,7 @@ class Bridge(commands.Cog):
     def generate_message_bundle(self, message):
         author = f"{message.author} (#{message.channel.name} in {message.guild.name})"
 
-        if not message.embeds or not message.attachements:
+        if not message.embeds and not message.attachments:
             if '\n' in message.content:
                 return f"`{author}`:\n{message.content}", None
             else:
