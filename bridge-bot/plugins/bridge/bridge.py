@@ -96,12 +96,20 @@ class Bridge(commands.Cog):
                 break
 
     def generate_message_bundle(self, message):
+        author = f"{message.author} (#{message.channel.name} in {message.guild.name})"
+
+        if not message.embeds or not message.attachements:
+            if '\n' in message.content:
+                return f"`{author}`:\n{message.content}", None
+            else:
+                return f"{message.content} `from {author}`", None
+
         e = message.embeds[0] if message.embeds else Embed(color=message.author.color)
         if message.author.avatar:
             pfp = message.author.avatar.url
         else:
             pfp = message.author.default_avatar.url
-        e.set_author(name=f"{message.author} (#{message.channel.name} in {message.guild.name})",
+        e.set_author(name=author,
                      icon_url=pfp)
         #
         e.description = message.content or "No Message Content"
