@@ -2,10 +2,12 @@ import asyncio
 import logging
 
 import motor.motor_asyncio
-from discord import AutocompleteContext, Embed, AllowedMentions, slash_command, NotFound
-from discord.commands import Option
-from discord.commands import permissions
+from discord import Embed, AllowedMentions, NotFound
+# import "app_commands" and only "app_commands"
+from discord import app_commands
 from discord.ext import commands
+from checksumdir import dirhash
+from discord import Object
 
 from utils.cfg import cfg
 from utils.reporter import report_error
@@ -23,9 +25,25 @@ class Bridge(commands.Cog):
         self.bridge_queues = {}
         self.bridge_tasks = {}
         self.bridge_logs = {}
+        self.ran = False
 
     @commands.Cog.listener()
     async def on_ready(self):
+        if self.ran:
+            return
+        self.ran = True
+        log.info("Checking if plugins have changed!")
+        plugins_hash = dirhash("plugins")
+        log.debug(f"Plugin folder hash: {plugins_hash}")
+        # check if hash in db matches
+        db_entry = await self.db.state.find_one({"_id": "plugins_hash"})
+        if db_entry and plugins_hash == db_entry.get("hash"):
+            log.info("Plugins have not changed!")
+        else:
+            log.info("Plugins have changed! Updating Commands...")
+            await self.bot.tree.sync()
+            await self.db.state.update_one({"_id": "plugins_hash"}, {"$set": {"hash": plugins_hash}}, upsert=True)
+            log.info("Commands updated!")
         await self.maintenance()
 
     async def maintenance(self):
@@ -260,13 +278,10 @@ class Bridge(commands.Cog):
         await self.bridge_queues[bridge["name"]].put({"type": "deleted_message", "message": message})
         log.debug(f"Deleted message put in Queue for Bridge {bridge['name']}")
 
-    def match_bridge_names(self, name: AutocompleteContext):
-        return [bridge for bridge in self.bridge_names if bridge.startswith(name.value)]
-
-    @slash_command(default_permission=False)
-    @permissions.is_owner()
+    @commands.hybrid_command(default_permission=False)
+    @commands.is_owner()
     async def create(self,
-                     ctx,
+                     ctx: commands.Context,
                      bridge_name: str):
         """Create a new bridge"""
         await ctx.defer(ephemeral=True)
@@ -274,85 +289,76 @@ class Bridge(commands.Cog):
         # check if this channel is already bridged
         bridge = await self.db.bridges.find_one({"channels": current_channel_id})
         if bridge:
-            await ctx.respond(f"This channel is already connected to Bridge {bridge['name']}!", ephemeral=True)
+            await ctx.reply(f"This channel is already connected to Bridge {bridge['name']}!", ephemeral=True)
             return
 
         # check if bridge name is already in use
         bridge = await self.db.bridges.find_one({"name": bridge_name})
         if bridge:
-            await ctx.respond("This bridge name is already in use!", ephemeral=True)
+            await ctx.reply("This bridge name is already in use!", ephemeral=True)
             return
 
         # create the bridge
         await self.db.bridges.insert_one({"name": bridge_name, "channels": [current_channel_id]})
         await self.maintenance()
-        await ctx.respond(f"Bridge created!\n"
+        await ctx.reply(f"Bridge created!\n"
                           f"Use `/connect {bridge_name}` to connect other channels to this bridge.",
                           ephemeral=True)
 
-    @slash_command(default_permission=False)
-    @permissions.is_owner()
+    @commands.hybrid_command(default_permission=False)
+    @commands.is_owner()
     async def delete(self,
-                     ctx,
-                     bridge_name: Option(
-                         str,
-                         autocomplete=match_bridge_names
-                     )):
+                     ctx: commands.Context,
+                     bridge_name: str):
         """Delete a bridge"""
         await ctx.defer(ephemeral=True)
         # check if bridge name is already in use
         bridge = await self.db.bridges.find_one({"name": bridge_name})
         if not bridge:
-            await ctx.respond("This bridge name is not in use!", ephemeral=True)
+            await ctx.reply("This bridge name is not in use!", ephemeral=True)
             return
 
         # delete the bridge
         await self.db.bridges.delete_one({"name": bridge_name})
         await self.maintenance()
-        await ctx.respond(f'Bridge {bridge_name} deleted!', ephemeral=True)
+        await ctx.reply(f'Bridge {bridge_name} deleted!', ephemeral=True)
 
-    @slash_command(default_permission=False)
-    @permissions.is_owner()
+    @commands.hybrid_command(default_permission=False)
+    @commands.is_owner()
     async def connect(self,
-                      ctx,
-                      bridge_name: Option(
-                          str,
-                          autocomplete=match_bridge_names
-                      )):
+                      ctx: commands.Context,
+                      bridge_name: str):
         """Connect the current channel to a bridge"""
         await ctx.defer(ephemeral=True)
         # check if bridge name is already in use
         bridge = await self.db.bridges.find_one({"name": bridge_name})
         if not bridge:
-            await ctx.respond("This bridge name is not in use!", ephemeral=True)
+            await ctx.reply("This bridge name is not in use!", ephemeral=True)
             return
 
         # check if this channel is already bridged
         bridge = await self.db.bridges.find_one({"channels": ctx.channel.id})
         if bridge:
-            await ctx.respond("This channel is already bridged!", ephemeral=True)
+            await ctx.reply("This channel is already bridged!", ephemeral=True)
             return
 
         # connect the channel to the bridge
         await self.db.bridges.update_one({"name": bridge_name},
                                          {"$push": {"channels": ctx.channel.id}})
         await self.maintenance()
-        await ctx.respond('Channel connected to bridge!', ephemeral=True)
+        await ctx.reply('Channel connected to bridge!', ephemeral=True)
 
-    async def match_connected_bridge_name(self, ctx: AutocompleteContext):
-        bridge = await self.db.bridges.find_one({'channels': ctx.interaction.channel.id})
-        if bridge:
-            return [bridge['name']]
-        return []
+    @delete.autocomplete("bridge_name")
+    @connect.autocomplete("bridge_name")
+    async def match_bridge_names(self, ctx, name: str):
+        return [app_commands.Choice(name=bridge, value=bridge) for bridge in self.bridge_names if bridge.startswith(name)]
 
-    @slash_command(default_permission=False)
-    @permissions.is_owner()
+
+    @commands.hybrid_command(default_permission=False)
+    @commands.is_owner()
     async def disconnect(self,
                          ctx,
-                         bridge_name: Option(
-                             str,
-                             autocomplete=match_connected_bridge_name
-                         )):
+                         bridge_name: str):
         """Disconnect the current channel from a bridge"""
         await ctx.defer(ephemeral=True)
         # check if bridge name is already in use
@@ -373,6 +379,12 @@ class Bridge(commands.Cog):
         await self.maintenance()
         await ctx.respond('Channel disconnected from bridge!', ephemeral=True)
 
+    @disconnect.autocomplete("bridge_name")
+    async def match_connected_bridge_name(self, ctx, name: str):
+        bridge = await self.db.bridges.find_one({'channels': ctx.channel.id})
+        if bridge:
+            return [bridge['name']]
+        return []
 
-def setup(bot):
-    bot.add_cog(Bridge(bot))
+async def setup(bot):
+    await bot.add_cog(Bridge(bot))
