@@ -29,7 +29,7 @@ class DMBlocker(commands.Cog):
         self.run_loop.start()
 
 
-    @tasks.loop(hours=3) # hourly
+    @tasks.loop(hours=23, minutes=55) # hourly
     async def run_loop(self):
         # get all pinned messages in db
         enabled_servers = await self.db.guilds.find().to_list(length=None)
